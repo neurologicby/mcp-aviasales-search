@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aviasales-mcp"
+version = "0.1.0"
+description = "Queue-backed MCP server for Aviasales/Travelpayouts flight price data"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "httpx>=0.28.1,<0.29",
+  "mcp>=2.0.0,<3",
+  "pydantic>=2.11,<3",
+  "redis>=6.4,<7",
+  "uvicorn>=0.35,<1",
+]
+
+[project.optional-dependencies]
+test = [
+  "bandit>=1.8,<2",
+  "fakeredis>=2.31,<3",
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "pytest-cov>=6.2,<7",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+aviasales-mcp = "aviasales_mcp.server:main"
+aviasales-worker = "aviasales_mcp.worker:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aviasales_mcp"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --strict-config"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]

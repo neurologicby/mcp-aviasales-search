@@ -1,0 +1,59 @@
+services:
+  redis:
+    image: redis:8.10.2-alpine
+    # Для очереди потеря ключей недопустима: при исчерпании памяти запись должна
+    # завершиться явной ошибкой, а не вытеснить необработанное задание.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  server:
+    build: .
+    environment:
+      TRAVELPAYOUTS_TOKEN: ${TRAVELPAYOUTS_TOKEN:?Set TRAVELPAYOUTS_TOKEN}
+      TRAVELPAYOUTS_TRS: ${TRAVELPAYOUTS_TRS:?Set TRAVELPAYOUTS_TRS}
+      TRAVELPAYOUTS_MARKER: ${TRAVELPAYOUTS_MARKER:?Set TRAVELPAYOUTS_MARKER}
+      REDIS_URL: redis://redis:6379/0
+      HOST: 0.0.0.0
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:?Set MCP_BEARER_TOKEN}
+      MCP_ISSUER_URL: ${MCP_ISSUER_URL:-https://auth.example.com}
+      MCP_RESOURCE_SERVER_URL: ${MCP_RESOURCE_SERVER_URL:-http://localhost:8000/mcp}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*}
+      QUEUE_MAX_LENGTH: ${QUEUE_MAX_LENGTH:-10000}
+      JOB_TIMEOUT_SECONDS: ${JOB_TIMEOUT_SECONDS:-25}
+    ports:
+      # По умолчанию endpoint доступен только локальному reverse proxy.
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8000}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["aviasales-worker"]
+    environment:
+      TRAVELPAYOUTS_TOKEN: ${TRAVELPAYOUTS_TOKEN:?Set TRAVELPAYOUTS_TOKEN}
+      TRAVELPAYOUTS_TRS: ${TRAVELPAYOUTS_TRS:?Set TRAVELPAYOUTS_TRS}
+      TRAVELPAYOUTS_MARKER: ${TRAVELPAYOUTS_MARKER:?Set TRAVELPAYOUTS_MARKER}
+      REDIS_URL: redis://redis:6379/0
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-20}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    deploy:
+      replicas: 2
+
+volumes:
+  redis-data:
