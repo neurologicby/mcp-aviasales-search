@@ -250,11 +250,17 @@ class TravelpayoutsClient:
         }
 
     async def analyze_calendar(self, request: CalendarAnalysisRequest) -> dict[str, Any]:
+        # Публичный контракт MCP сохраняет понятные названия старого календарного API,
+        # а актуальный endpoint Travelpayouts ожидает поля с суффиксом ``_at``.  # noqa: RUF003
+        provider_group_by = {
+            "departure_date": "departure_at",
+            "return_date": "return_at",
+        }[request.calendar_type]
         params: dict[str, Any] = {
             "origin": request.origin,
             "destination": request.destination,
             "departure_at": request.month,
-            "group_by": request.calendar_type,
+            "group_by": provider_group_by,
             "currency": request.currency.lower(),
             "market": "ru",
             "direct": str(request.direct_only).lower(),

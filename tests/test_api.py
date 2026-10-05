@@ -98,6 +98,7 @@ async def test_search_uses_v3_and_returns_only_verified_partner_links(settings) 
 async def test_calendar_returns_verified_links_for_best_dates(settings) -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/aviasales/v3/grouped_prices":
+            assert request.url.params["group_by"] == "departure_at"
             return httpx.Response(
                 200,
                 json={
