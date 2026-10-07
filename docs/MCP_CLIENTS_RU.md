@@ -5,7 +5,7 @@
 - URL: `https://mcp.example.com/mcp`
 - транспорт: Streamable HTTP
 - заголовок: `Authorization: Bearer <MCP_BEARER_TOKEN>`
-- инструменты: `search_flights`, `analyze_price_calendar`
+- инструменты: `search_flights`, `analyze_price_calendar`, `live_search_flights`
 
 `MCP_BEARER_TOKEN` — секрет доступа к вашему MCP, а не API-ключ Travelpayouts. Никогда не
 передавайте клиентам `TRAVELPAYOUTS_TOKEN`: он остаётся только на сервере.
@@ -30,7 +30,7 @@ Codex CLI и IDE используют общий `~/.codex/config.toml`. Доб�
 [mcp_servers.aviasales]
 url = "https://mcp.example.com/mcp"
 bearer_token_env_var = "AVIASALES_MCP_TOKEN"
-enabled_tools = ["search_flights", "analyze_price_calendar"]
+enabled_tools = ["search_flights", "analyze_price_calendar", "live_search_flights"]
 ```
 
 Проверка:
@@ -144,7 +144,7 @@ Streamable HTTP и расположение `mcp.json` в
     "authorization": "Bearer YOUR_MCP_ACCESS_TOKEN"
   },
   "connection_origin": "environment",
-  "allowed_tools": ["search_flights", "analyze_price_calendar"],
+  "allowed_tools": ["search_flights", "analyze_price_calendar", "live_search_flights"],
   "required": true
 }
 ```
@@ -164,7 +164,7 @@ multi-user OAuth-сервером. Для прямого подключения 
 
 1. `https://mcp.example.com/readyz` должен вернуть `ready`.
 2. POST на `/mcp` без токена должен вернуть `401`.
-3. Клиент должен обнаружить ровно два инструмента.
+3. Клиент должен обнаружить три инструмента.
 4. `401` означает неверный Bearer; `400/421` — Host/Origin отсутствует в allowlist.
 5. При timeout проверьте Nginx `proxy_read_timeout`, очередь и worker logs.
 6. Если Partner Links API отвергает запрос, проверьте `TRS`, `MARKER` и доступ проекта к

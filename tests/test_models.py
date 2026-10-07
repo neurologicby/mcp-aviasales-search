@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from pydantic import ValidationError
 
 from aviasales_mcp.models import (
     CalendarAnalysisRequest,
     FlightSearchRequest,
+    LiveFlightSearchRequest,
     analyze_calendar_entries,
 )
 
@@ -37,6 +40,33 @@ def test_calendar_validation() -> None:
         CalendarAnalysisRequest(origin="MOW", destination="LED", month="2026-13")
     with pytest.raises(ValidationError):
         CalendarAnalysisRequest(origin="M0W", destination="LED", month="2026-11")
+
+
+def test_live_search_validates_user_context_and_passengers() -> None:
+    request = LiveFlightSearchRequest(
+        origin=" mow ",
+        destination="led",
+        depart_date=date.today() + timedelta(days=10),
+        adults=2,
+        infants=1,
+        user_ip="203.0.113.10",
+        user_agent="Browser/1.0",
+        referer="https://example.com/flights",
+    )
+    assert request.origin == "MOW"
+    assert request.user_ip == "203.0.113.10"
+
+    with pytest.raises(ValidationError):
+        LiveFlightSearchRequest(
+            origin="MOW",
+            destination="LED",
+            depart_date=date.today() + timedelta(days=10),
+            adults=1,
+            infants=1,
+            user_ip="not-an-ip",
+            user_agent="Browser/1.0",
+            referer="https://example.com/flights",
+        )
 
 
 def test_calendar_analysis_statistics_and_trend() -> None:

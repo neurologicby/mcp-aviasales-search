@@ -21,12 +21,58 @@ class StubApi:
     async def analyze_calendar(self, request):
         return {"days_with_prices": 2, "origin": request.origin}
 
+    async def live_search_flights(self, request):
+        return {"offers": [{"origin": request.origin}], "count": 1}
+
+
+class EmptyStubApi(StubApi):
+    async def search_flights(self, request):
+        return {"offers": [], "count": 0, "empty_reason": "no_matching_cached_observations"}
+
 
 @pytest.mark.asyncio
 async def test_queue_worker_roundtrip_and_cache(settings) -> None:
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
     queue = RedisJobQueue(redis, settings)
     worker = Worker(redis, settings, StubApi())
+    payload = {
+        "origin": "MOW",
+        "destination": "LED",
+        "depart_date": "2026-11-10",
+        "return_date": None,
+        "currency": "RUB",
+        "trip_class": "economy",
+        "direct_only": False,
+        "limit": 10,
+    }
+
+    await worker.ensure_group()
+    await redis.set(
+        queue.cache_key("search_flights", payload),
+        '{"offers":[],"count":0,"empty_reason":"stale-empty-result"}',
+    )
+    submitted = asyncio.create_task(queue.submit("search_flights", payload))
+    await asyncio.sleep(0)
+    messages = await redis.xreadgroup(
+        settings.stream_consumer_group, "test", {STREAM_KEY: ">"}, count=1
+    )
+    message_id, fields = messages[0][1][0]
+    await worker.process_job(fields["job"], message_id)
+    first = await submitted
+    second = await queue.submit("search_flights", payload)
+
+    assert first["cache"] == "miss"
+    assert first["offers"][0]["origin"] == "MOW"
+    assert second["cache"] == "hit"
+    assert await redis.xlen(STREAM_KEY) == 0
+    await redis.aclose()
+
+
+@pytest.mark.asyncio
+async def test_empty_result_is_not_cached(settings) -> None:
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    queue = RedisJobQueue(redis, settings)
+    worker = Worker(redis, settings, EmptyStubApi())
     payload = {
         "origin": "MOW",
         "destination": "LED",
@@ -46,13 +92,10 @@ async def test_queue_worker_roundtrip_and_cache(settings) -> None:
     )
     message_id, fields = messages[0][1][0]
     await worker.process_job(fields["job"], message_id)
-    first = await submitted
-    second = await queue.submit("search_flights", payload)
+    result = await submitted
 
-    assert first["cache"] == "miss"
-    assert first["offers"][0]["origin"] == "MOW"
-    assert second["cache"] == "hit"
-    assert await redis.xlen(STREAM_KEY) == 0
+    assert result["empty_reason"] == "no_matching_cached_observations"
+    assert await redis.get(queue.cache_key("search_flights", payload)) is None
     await redis.aclose()
 
 
@@ -70,7 +113,7 @@ async def test_queue_backpressure(settings) -> None:
 @pytest.mark.asyncio
 async def test_distributed_request_rate_limit(settings) -> None:
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    settings = replace(settings, mcp_requests_per_minute=1)
+    settings = replace(settings, mcp_requests_per_minute=1, empty_cache_ttl_seconds=5)
     queue = RedisJobQueue(redis, settings)
     payload = {"cached": True}
     await redis.set(queue.cache_key("search_flights", payload), '{"count":0,"offers":[]}')

@@ -73,12 +73,22 @@ WORKER_CONCURRENCY=20
 QUEUE_MAX_LENGTH=10000
 JOB_TIMEOUT_SECONDS=25
 CACHE_TTL_SECONDS=300
+EMPTY_CACHE_TTL_SECONDS=0
 PARTNER_LINKS_PER_MINUTE=90
 MCP_REQUESTS_PER_MINUTE=600
+LIVE_SEARCH_TIMEOUT_SECONDS=65
+LIVE_SEARCH_POLL_INTERVAL_SECONDS=2
+LIVE_SEARCH_REQUESTS_PER_HOUR=100
+LIVE_SEARCH_LOCALE=ru
+LIVE_SEARCH_MARKET=RU
 ```
 
 `TRAVELPAYOUTS_TRS` and `TRAVELPAYOUTS_MARKER` are positive integers. Never commit `.env` or
 copy it into unencrypted backups or support messages.
+
+`live_search_flights` works only after Travelpayouts separately approves Flight Search API access.
+The calling gateway must forward the end user's real `X-User-IP`, `User-Agent`, and `Referer`;
+do not substitute a server address or fabricated values.
 
 ## 4. Start the stack
 

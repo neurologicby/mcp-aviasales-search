@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -16,7 +17,7 @@ from redis.exceptions import ResponseError
 
 from .api import TravelpayoutsClient, UpstreamError, execute_with_retries
 from .config import Settings
-from .models import CalendarAnalysisRequest, FlightSearchRequest
+from .models import CalendarAnalysisRequest, FlightSearchRequest, LiveFlightSearchRequest
 from .queue import DEAD_LETTER_STREAM, STREAM_KEY
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,29 @@ class Worker:
                 retryable=True,
                 retry_after_seconds=retry_after,
             )
+
+    async def acquire_live_search_quota(self, user_ip: str) -> None:
+        """Ограничивает число запусков live-поиска на один IP согласно квоте провайдера."""
+        window = int(time.time() // 3600)
+        ip_digest = hashlib.sha256(user_ip.encode()).hexdigest()
+        key = f"aviasales:rate:live-search:{ip_digest}:{window}"
+        count = await self.redis.incr(key)
+        if count == 1:
+            await self.redis.expire(key, 3700)
+        if count > self.settings.live_search_requests_per_hour:
+            raise UpstreamError(
+                "Travelpayouts live search hourly rate limit reached",
+                retryable=False,
+            )
+
+    @staticmethod
+    def _result_has_data(kind: str, result: dict[str, Any]) -> bool:
+        """Не допускает длительного кэширования успешных, но пустых ответов."""  # noqa: RUF002
+        if kind in {"search_flights", "live_search_flights"}:
+            return bool(result.get("offers"))
+        if kind == "analyze_price_calendar":
+            return bool(result.get("daily_prices"))
+        return False
 
     async def _publish(self, job_id: str, result: dict[str, Any]) -> None:
         key = f"aviasales:result:{job_id}"
@@ -106,6 +130,10 @@ class Worker:
             elif kind == "analyze_price_calendar":
                 request = CalendarAnalysisRequest.model_validate(job["payload"])
                 operation = partial(self.api.analyze_calendar, request)
+            elif kind == "live_search_flights":
+                request = LiveFlightSearchRequest.model_validate(job["payload"])
+                await self.acquire_live_search_quota(request.user_ip)
+                operation = partial(self.api.live_search_flights, request)
             else:
                 await self._publish(job_id, {"ok": False, "error": "unknown job type"})
                 await self._ack(message_id)
@@ -117,7 +145,12 @@ class Worker:
             await self._record_upstream_success()
             encoded = json.dumps(result, separators=(",", ":"))
             async with self.redis.pipeline(transaction=True) as pipeline:
-                pipeline.set(job["cache_key"], encoded, ex=self.settings.cache_ttl_seconds)
+                if kind != "live_search_flights" and self._result_has_data(kind, result):
+                    pipeline.set(job["cache_key"], encoded, ex=self.settings.cache_ttl_seconds)
+                elif kind != "live_search_flights" and self.settings.empty_cache_ttl_seconds > 0:
+                    pipeline.set(
+                        job["cache_key"], encoded, ex=self.settings.empty_cache_ttl_seconds
+                    )
                 pipeline.lpush(
                     f"aviasales:result:{job_id}",
                     json.dumps({"ok": True, "data": result}, separators=(",", ":")),

@@ -32,6 +32,18 @@ def _csv(name: str, default: str) -> tuple[str, ...]:
     return tuple(value.strip() for value in os.getenv(name, default).split(",") if value.strip())
 
 
+def _float(name: str, default: float, *, minimum: float = 0.1) -> float:
+    """Читает положительное дробное значение из переменной окружения."""
+    raw = os.getenv(name, str(default))
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number") from exc
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    return value
+
+
 def _secret(name: str, *, minimum_length: int = 32) -> str:
     value = os.getenv(name, "").strip()
     if value and len(value) < minimum_length:
@@ -52,6 +64,7 @@ class Settings:
     job_timeout_seconds: int = 25
     queue_max_length: int = 10_000
     cache_ttl_seconds: int = 300
+    empty_cache_ttl_seconds: int = 0
     result_ttl_seconds: int = 60
     worker_concurrency: int = 20
     worker_max_attempts: int = 3
@@ -61,6 +74,12 @@ class Settings:
     mcp_requests_per_minute: int = 600
     circuit_breaker_failures: int = 5
     circuit_breaker_open_seconds: int = 30
+    live_search_base_url: str = "https://tickets-api.travelpayouts.com"
+    live_search_timeout_seconds: int = 65
+    live_search_poll_interval_seconds: float = 2.0
+    live_search_requests_per_hour: int = 100
+    live_search_locale: str = "ru"
+    live_search_market: str = "RU"
     mcp_bearer_token: str = ""
     mcp_issuer_url: str = "https://auth.invalid"
     mcp_resource_server_url: str = "http://localhost:8000/mcp"
@@ -95,6 +114,7 @@ class Settings:
             job_timeout_seconds=_int("JOB_TIMEOUT_SECONDS", 25),
             queue_max_length=_int("QUEUE_MAX_LENGTH", 10_000),
             cache_ttl_seconds=_int("CACHE_TTL_SECONDS", 300),
+            empty_cache_ttl_seconds=_int("EMPTY_CACHE_TTL_SECONDS", 0, minimum=0),
             result_ttl_seconds=_int("RESULT_TTL_SECONDS", 60),
             worker_concurrency=_int("WORKER_CONCURRENCY", 20),
             worker_max_attempts=_int("WORKER_MAX_ATTEMPTS", 3),
@@ -106,6 +126,16 @@ class Settings:
             mcp_requests_per_minute=_int("MCP_REQUESTS_PER_MINUTE", 600),
             circuit_breaker_failures=_int("CIRCUIT_BREAKER_FAILURES", 5),
             circuit_breaker_open_seconds=_int("CIRCUIT_BREAKER_OPEN_SECONDS", 30),
+            live_search_base_url=os.getenv(
+                "LIVE_SEARCH_BASE_URL", "https://tickets-api.travelpayouts.com"
+            ).rstrip("/"),
+            live_search_timeout_seconds=_int("LIVE_SEARCH_TIMEOUT_SECONDS", 65),
+            live_search_poll_interval_seconds=_float(
+                "LIVE_SEARCH_POLL_INTERVAL_SECONDS", 2.0
+            ),
+            live_search_requests_per_hour=_int("LIVE_SEARCH_REQUESTS_PER_HOUR", 100),
+            live_search_locale=os.getenv("LIVE_SEARCH_LOCALE", "ru").strip(),
+            live_search_market=os.getenv("LIVE_SEARCH_MARKET", "RU").strip().upper(),
             mcp_bearer_token=_secret("MCP_BEARER_TOKEN"),
             mcp_issuer_url=os.getenv("MCP_ISSUER_URL", "https://auth.invalid").strip(),
             mcp_resource_server_url=os.getenv(

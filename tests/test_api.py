@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 
 import httpx
 import pytest
 
 from aviasales_mcp.api import TravelpayoutsClient, UpstreamError
-from aviasales_mcp.models import CalendarAnalysisRequest, FlightSearchRequest
+from aviasales_mcp.models import (
+    CalendarAnalysisRequest,
+    FlightSearchRequest,
+    LiveFlightSearchRequest,
+)
 
 
 def affiliate_response(body: dict) -> dict:
@@ -162,6 +167,23 @@ async def test_partner_link_is_rejected_if_api_does_not_verify_it(settings) -> N
 
 
 @pytest.mark.asyncio
+async def test_empty_cached_search_has_explicit_reason(settings) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/aviasales/v3/prices_for_dates"
+        return httpx.Response(200, json={"success": True, "data": []})
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=settings.api_base_url)
+    api = TravelpayoutsClient(settings, http)
+    result = await api.search_flights(
+        FlightSearchRequest(origin="MOW", destination="LED", depart_date="2026-11-10")
+    )
+
+    assert result["count"] == 0
+    assert result["empty_reason"] == "no_matching_cached_observations"
+    await http.aclose()
+
+
+@pytest.mark.asyncio
 async def test_upstream_errors_are_safe_and_classified(settings) -> None:
     async def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(429, text="secret provider details", headers={"Retry-After": "2"})
@@ -175,4 +197,75 @@ async def test_upstream_errors_are_safe_and_classified(settings) -> None:
     assert caught.value.retryable is True
     assert caught.value.retry_after_seconds == 2
     assert "secret" not in str(caught.value)
+    await http.aclose()
+
+
+@pytest.mark.asyncio
+async def test_live_search_starts_polls_and_normalizes_results(settings) -> None:
+    calls: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        assert request.headers["x-user-ip"] == "203.0.113.10"
+        assert request.headers["referer"] == "https://example.com/flights"
+        if request.url.path == "/search/affiliate/start":
+            body = json.loads(request.content)
+            assert body["signature"] == request.headers["x-signature"]
+            assert body["search_params"]["trip_class"] == "Y"
+            return httpx.Response(
+                200,
+                json={
+                    "search_id": "search-1",
+                    "results_url": "results.travelpayouts.com",
+                },
+            )
+        assert request.url.path == "/search/affiliate/results"
+        return httpx.Response(
+            200,
+            json={
+                "flight_legs": [
+                    {
+                        "origin": "MOW",
+                        "destination": "LED",
+                        "local_departure_date_time": "2026-11-10T08:00:00+03:00",
+                        "local_arrival_date_time": "2026-11-10T09:30:00+03:00",
+                        "operating_carrier_designator": "SU100",
+                    }
+                ],
+                "agents": [{"id": 70, "label": "Test Agency"}],
+                "tickets": [
+                    {
+                        "segments": [{"flights": [0]}],
+                        "proposals": [
+                            {
+                                "agent_id": 70,
+                                "price": {"amount": 5000, "currency": "RUB"},
+                            }
+                        ],
+                    }
+                ],
+                "last_update_timestamp": 123,
+                "is_over": True,
+            },
+        )
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    api = TravelpayoutsClient(settings, http)
+    result = await api.live_search_flights(
+        LiveFlightSearchRequest(
+            origin="MOW",
+            destination="LED",
+            depart_date=date.today() + timedelta(days=10),
+            user_ip="203.0.113.10",
+            user_agent="Browser/1.0",
+            referer="https://example.com/flights",
+        )
+    )
+
+    assert calls == ["/search/affiliate/start", "/search/affiliate/results"]
+    assert result["live_availability"] is True
+    assert result["complete"] is True
+    assert result["offers"][0]["price"] == 5000.0
+    assert result["offers"][0]["agency"] == "Test Agency"
+    assert "user_ip" not in result["query"]
     await http.aclose()

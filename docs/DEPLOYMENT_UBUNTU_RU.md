@@ -81,12 +81,22 @@ WORKER_CONCURRENCY=20
 QUEUE_MAX_LENGTH=10000
 JOB_TIMEOUT_SECONDS=25
 CACHE_TTL_SECONDS=300
+EMPTY_CACHE_TTL_SECONDS=0
 PARTNER_LINKS_PER_MINUTE=90
 MCP_REQUESTS_PER_MINUTE=600
+LIVE_SEARCH_TIMEOUT_SECONDS=65
+LIVE_SEARCH_POLL_INTERVAL_SECONDS=2
+LIVE_SEARCH_REQUESTS_PER_HOUR=100
+LIVE_SEARCH_LOCALE=ru
+LIVE_SEARCH_MARKET=RU
 ```
 
 `TRAVELPAYOUTS_TRS` и `TRAVELPAYOUTS_MARKER` — положительные целые числа. Не помещайте
 `.env` в Git, резервные копии без шифрования или сообщения поддержки.
+
+`live_search_flights` заработает только после отдельного одобрения Flight Search API со стороны
+Travelpayouts. Вызывающий gateway должен передавать реальные `X-User-IP`, `User-Agent` и
+`Referer` конечного пользователя; не подставляйте адрес сервера или фиктивные значения.
 
 ## 5. Запуск
 

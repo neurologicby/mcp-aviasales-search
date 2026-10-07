@@ -10,6 +10,7 @@ import uvicorn
 from mcp.server import MCPServer
 from mcp.server.auth.provider import AccessToken, TokenVerifier
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import AnyHttpUrl, ValidationError
@@ -19,7 +20,7 @@ from starlette.responses import JSONResponse, PlainTextResponse, Response
 
 from . import __version__
 from .config import Settings
-from .models import CalendarAnalysisRequest, FlightSearchRequest
+from .models import CalendarAnalysisRequest, FlightSearchRequest, LiveFlightSearchRequest
 from .queue import JobTimeoutError, QueueBusyError, RedisJobQueue
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,8 @@ mcp = MCPServer(
     version=__version__,
     instructions=(
         "Use search_flights for cached matching flight-price options and "
-        "analyze_price_calendar for price-calendar statistics. Prices are not live availability."
+        "analyze_price_calendar for price-calendar statistics. Use live_search_flights only "
+        "when the caller forwards the real user's network context and live API access is enabled."
     ),
     **auth_kwargs,
 )
@@ -137,6 +139,56 @@ async def analyze_price_calendar(
     except ValidationError as exc:
         raise ToolError("Invalid calendar analysis parameters") from exc
     return await _submit("analyze_price_calendar", request.model_dump(mode="json"))
+
+
+@mcp.tool()
+async def live_search_flights(
+    origin: str,
+    destination: str,
+    depart_date: str,
+    ctx: Context,
+    return_date: str | None = None,
+    currency: Literal["RUB", "USD", "EUR"] = "RUB",
+    trip_class: Literal["economy", "business", "first", "comfort"] = "economy",
+    adults: int = 1,
+    children: int = 0,
+    infants: int = 0,
+    direct_only: bool = False,
+    limit: int = 10,
+) -> dict:
+    """Run an uncached real-time flight search using the end user's forwarded HTTP context.
+
+    The caller must forward X-User-IP and the original browser User-Agent and Referer headers.
+    Results may take up to 60 seconds. Booking links are intentionally not generated automatically.
+    """
+    headers = {key.lower(): value for key, value in (ctx.headers or {}).items()}
+    user_ip = headers.get("x-user-ip", "").split(",", maxsplit=1)[0].strip()
+    user_agent = headers.get("x-user-agent") or headers.get("user-agent", "")
+    referer = headers.get("x-user-referer") or headers.get("referer", "")
+    if not user_ip or not user_agent or not referer:
+        raise ToolError(
+            "Live search requires forwarded X-User-IP, User-Agent, and Referer headers"
+        )
+    try:
+        request = LiveFlightSearchRequest(
+            origin=origin,
+            destination=destination,
+            depart_date=depart_date,
+            return_date=return_date,
+            currency=currency,
+            trip_class=trip_class,
+            adults=adults,
+            children=children,
+            infants=infants,
+            direct_only=direct_only,
+            limit=limit,
+            user_ip=user_ip,
+            user_agent=user_agent,
+            referer=referer,
+        )
+    except ValidationError as exc:
+        raise ToolError("Invalid live flight search parameters or user context") from exc
+    return await _submit("live_search_flights", request.model_dump(mode="json"))
 
 
 @mcp.custom_route("/healthz", methods=["GET"])

@@ -5,7 +5,7 @@
 - URL: `https://mcp.example.com/mcp`
 - transport: Streamable HTTP
 - header: `Authorization: Bearer <MCP_BEARER_TOKEN>`
-- tools: `search_flights`, `analyze_price_calendar`
+- tools: `search_flights`, `analyze_price_calendar`, `live_search_flights`
 
 `MCP_BEARER_TOKEN` protects the MCP endpoint. It is not the Travelpayouts API token. Never
 distribute `TRAVELPAYOUTS_TOKEN` to clients; it remains server-side only.
@@ -30,7 +30,7 @@ Add this to the shared `~/.codex/config.toml`:
 [mcp_servers.aviasales]
 url = "https://mcp.example.com/mcp"
 bearer_token_env_var = "AVIASALES_MCP_TOKEN"
-enabled_tools = ["search_flights", "analyze_price_calendar"]
+enabled_tools = ["search_flights", "analyze_price_calendar", "live_search_flights"]
 ```
 
 Run `codex mcp list`, restart Codex, and ask it to use `search_flights`. The remote Streamable
@@ -126,7 +126,7 @@ for the session or through a vault, not in a reusable agent definition:
     "authorization": "Bearer YOUR_MCP_ACCESS_TOKEN"
   },
   "connection_origin": "environment",
-  "allowed_tools": ["search_flights", "analyze_price_calendar"],
+  "allowed_tools": ["search_flights", "analyze_price_calendar", "live_search_flights"],
   "required": true
 }
 ```
@@ -145,7 +145,7 @@ per-user authorization, or a compatible authentication gateway in front of this 
 
 1. `https://mcp.example.com/readyz` must report `ready`.
 2. An unauthenticated POST to `/mcp` must return `401`.
-3. The client must discover exactly two tools.
+3. The client must discover three tools.
 4. `401` means an invalid bearer; `400/421` usually means a Host/Origin allowlist mismatch.
 5. For timeouts, inspect Nginx `proxy_read_timeout`, queue depth, and worker logs.
 6. If Partner Links rejects requests, verify `TRS`, `MARKER`, and Aviasales program access.

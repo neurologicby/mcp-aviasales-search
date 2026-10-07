@@ -2,9 +2,9 @@
 
 [Русский](#русский) · [English](#english) · [MIT License](LICENSE)
 
-Production-oriented Python MCP server for cached Aviasales/Travelpayouts flight-price
-data and verified Travelpayouts affiliate links. It exposes exactly two tools:
-`search_flights` and `analyze_price_calendar`.
+Production-oriented Python MCP server for cached and live Aviasales/Travelpayouts
+flight-price data. It exposes `search_flights`, `analyze_price_calendar`, and the
+access-controlled `live_search_flights` tool.
 
 > Travelpayouts Data API responses are cached market data, not guaranteed live inventory.
 > Price and availability must be confirmed on Aviasales before purchase.
@@ -17,6 +17,8 @@ data and verified Travelpayouts affiliate links. It exposes exactly two tools:
 - строгая Pydantic-валидация запросов;
 - Redis Streams, несколько worker-процессов, backpressure и reclaim заданий;
 - retry, deadline, cache, rate limit и circuit breaker;
+- пустые ответы Data API по умолчанию не кэшируются;
+- опциональный живой поиск для проектов с одобренным Flight Search API;
 - обязательное преобразование обычных Aviasales URL через Partner Links API;
 - Bearer-аутентификация, Host/Origin allowlist, health/readiness и метрики.
 
@@ -63,6 +65,8 @@ docker compose config --quiet
 - strict Pydantic request validation;
 - Redis Streams, multiple workers, backpressure and stale-job reclaim;
 - retries, deadlines, caching, distributed rate limiting and a circuit breaker;
+- empty Data API responses are not cached by default;
+- optional live search for projects approved for the Flight Search API;
 - mandatory conversion of plain Aviasales URLs through the Partner Links API;
 - bearer authentication, Host/Origin allowlists, health/readiness and metrics.
 
